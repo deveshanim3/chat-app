@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import MonacoEditor from '@monaco-editor/react';
+import { io } from 'socket.io-client';
 import './Compiler.css';
 
+const socket = io('http://localhost:5000'); // adjust if deployed
+
 const Compiler = ({ darkMode }) => {
-  const [code, setCode] = useState(`def main():\n    print("Hello, World!")\n\nif __name__ == "__main__":\n    main()`);
+  const [code, setCode] = useState('');
   const [output, setOutput] = useState('');
   const [language, setLanguage] = useState('python');
   const [stdin, setStdin] = useState('');
   const [version, setVersion] = useState('3.10.0');
+  const roomId = 'default-room'; // You can use project ID or URL param
+
+  const codeRef = useRef(code); // Prevent stale closure
 
   const languageVersionMap = {
     python: ['3.10.0'],
@@ -23,6 +29,28 @@ const Compiler = ({ darkMode }) => {
     cpp: 'cpp',
     java: 'java'
   };
+const socketRef=useRef()
+useEffect(() => {
+  socketRef.current = io('http://localhost:5000');
+
+  socketRef.current.emit('join-room', roomId);
+
+  socketRef.current.on('receive-code', (newCode) => {
+    if (newCode !== codeRef.current) {
+      setCode(newCode);
+      codeRef.current = newCode;
+    }
+  });
+
+  return () => socketRef.current.disconnect();
+}, []);
+
+
+  const handleEditorChange = (value) => {
+    setCode(value);
+    codeRef.current = value;
+    socket.emit('code-change', { roomId, code: value });
+  };
 
   const runCode = async () => {
     try {
@@ -32,7 +60,6 @@ const Compiler = ({ darkMode }) => {
         code,
         stdin
       });
-
       setOutput(res.data.run?.output || res.data.output || 'No output');
     } catch (err) {
       console.error('Compilation error:', err.response?.data || err.message);
@@ -40,26 +67,34 @@ const Compiler = ({ darkMode }) => {
     }
   };
 
+  const loadBoilerplate = (lang) => {
+    if (lang === 'python') {
+      return `def main():\n    print("Hello, World!")\n\nif __name__ == "__main__":\n    main()`;
+    }
+    if (lang === 'javascript') {
+      return `function main() {\n  console.log("Hello, World!");\n}\n\nmain();`;
+    }
+    if (lang === 'java') {
+      return `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}`;
+    }
+    if (lang === 'cpp') {
+      return `#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}`;
+    }
+    return '';
+  };
+
   return (
     <div className={`compiler-container ${darkMode ? 'dark' : 'light'}`}>
-
       <select
         value={language}
         onChange={(e) => {
           const lang = e.target.value;
           setLanguage(lang);
           setVersion(languageVersionMap[lang][0]);
-
-          // Boilerplate
-          if (lang === 'python') {
-            setCode(`def main():\n    print("Hello, World!")\n\nif __name__ == "__main__":\n    main()`);
-          } else if (lang === 'javascript') {
-            setCode(`function main() {\n  console.log("Hello, World!");\n}\n\nmain();`);
-          } else if (lang === 'java') {
-            setCode(`public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}`);
-          } else if (lang === 'cpp') {
-            setCode(`#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}`);
-          }
+          const boilerplate = loadBoilerplate(lang);
+          setCode(boilerplate);
+          codeRef.current = boilerplate;
+          socket.emit('code-change', { roomId, code: boilerplate });
         }}
       >
         <option value="python">Python</option>
@@ -71,11 +106,11 @@ const Compiler = ({ darkMode }) => {
       <br /><br />
 
       <MonacoEditor
-        height="400px"
+        height="500px"
         language={languageMapForMonaco[language]}
         theme={darkMode ? 'vs-dark' : 'light'}
         value={code}
-        onChange={(value) => setCode(value)}
+        onChange={handleEditorChange}
         options={{
           fontSize: 14,
           minimap: { enabled: false },

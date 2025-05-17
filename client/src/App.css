@@ -82,7 +82,7 @@
 }
 
 .chat-section{
-  flex:0.5;
+  flex:0.3;
   overflow-y: auto;
 }
 .compiler-section {
