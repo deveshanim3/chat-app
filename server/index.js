@@ -12,19 +12,30 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
-app.use('/api', compileRoutes); 
+app.use('/api', compileRoutes);
 
-//Socket.io logic
+// Socket.io logic
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
+  // Join a room
   socket.on("join-room", (roomId) => {
     socket.join(roomId);
+    socket.roomId = roomId;
     console.log(`${socket.id} joined room ${roomId}`);
   });
 
+  // Chat message
   socket.on("send-message", ({ roomId, message }) => {
-    socket.to(roomId).emit("receive-message", { sender: socket.id, message });
+    socket.to(roomId).emit("receive-message", {
+      sender: socket.id,
+      message
+    });
+  });
+  
+  // Code change (live collaboration)
+  socket.on("code-change", ({ roomId, code }) => {
+    socket.to(roomId).emit("receive-code", code);
   });
 
   socket.on("disconnect", () => {
